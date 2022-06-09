@@ -17,7 +17,7 @@
 #define USBLOG_DATA     3
 
 // Current log level
-#define USBLOG_LEVEL    USBLOG_INFO
+#define USBLOG_LEVEL    USBLOG_ERR
 
 #define LOG(l,a)        do { if (l <= USBLOG_LEVEL) printf a; } while (0)
 
@@ -217,6 +217,7 @@ int usbhw_transfer_out(uint8_t pid, int device_addr, int endpoint, int handshake
     uint32_t token = 0; 
     uint32_t resp;
     uint32_t status;
+    uint32_t LastStatus;
 
     LOG(USBLOG_DATA, ("TOKEN: %s", (pid == PID_SETUP) ? "SETUP" : (pid == PID_DATA0) ? "DATA0": (pid == PID_DATA1) ? "DATA1" : (pid == PID_IN) ? "IN" : "OUT"));
     LOG(USBLOG_DATA, ("  DEV %d EP %d\n", device_addr, endpoint));
@@ -245,17 +246,44 @@ int usbhw_transfer_out(uint8_t pid, int device_addr, int endpoint, int handshake
     token = (((uint32_t)pid)<<USB_XFER_TOKEN_PID_BITS_SHIFT) | (device_addr << USB_XFER_TOKEN_DEV_ADDR_SHIFT) | (endpoint << USB_XFER_TOKEN_EP_ADDR_SHIFT);
     usbhw_reg_write(USB_XFER_TOKEN, token | ctrl);
 
+//    printf("_usb_base 0x%x\n",_usb_base);
+
+    // printf("Waiting for USB_RX_STAT_START_PEND_SHIFT to clear\n");
+    LastStatus = usbhw_reg_read(USB_RX_STAT);
+    // printf("USB_RX_STAT 0x%x\n",LastStatus);
+
     // Wait for Tx to start
-    while ((status = usbhw_reg_read(USB_RX_STAT)) & (1 << USB_RX_STAT_START_PEND_SHIFT))
-        ;
+    do {
+       status = usbhw_reg_read(USB_RX_STAT);
+       if(LastStatus != status) {
+//          printf("USB_RX_STAT 0x%x\n",status);
+          LastStatus = status;
+       }
+       if((status & (1 << USB_RX_STAT_START_PEND_SHIFT)) == 0) {
+          break;
+       }
+    } while(1);
+    // printf("USB_RX_STAT_START_PEND_SHIFT cleared\n");
 
     // No handshaking? We are done
     if (!handshake)
         return USB_RES_OK;
 
     // Wait for idle
-    while (!((status = usbhw_reg_read(USB_RX_STAT)) & (1 << USB_RX_STAT_IDLE_SHIFT)))
-        ;
+//    printf("Waiting for IDLE 0x%x\n",LastStatus);
+
+    do {
+       status = usbhw_reg_read(USB_RX_STAT);
+       if(LastStatus != status) {
+          // printf("USB_RX_STAT 0x%x\n",status);
+          LastStatus = status;
+       }
+       if((status & (1 << USB_RX_STAT_IDLE_SHIFT)) == 0) {
+          break;
+       }
+    } while(1);
+
+//    LOG(USBLOG_DATA, ("Got idle 0x%x\n",status));
 
     if (status & (1 << USB_RX_STAT_RESP_TIMEOUT_SHIFT))
     {
@@ -473,7 +501,7 @@ int usbhw_reset(void)
     while (!usbhw_hub_device_detected())
         ;
 
-    LOG(USBLOG_INFO, ("HW: Device detected\n"));
+    LOG(USBLOG_INFO, ("HW: Device detected %d\n",usbhw_hub_full_speed_device()));
 
     // Enable SOF
     usbhw_hub_enable(usbhw_hub_full_speed_device(), 1);

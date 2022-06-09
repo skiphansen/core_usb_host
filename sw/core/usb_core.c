@@ -68,6 +68,7 @@ static int usb_setup_packet(int device_address, uint8_t request_type, uint8_t re
     usb_request[idx++] = (length >> 8) & 0xFF;
 
     // Send SETUP token + DATA0 (always DATA0)
+//    printf("calling usbhw_transfer_out\n");
     return usbhw_transfer_out(PID_SETUP, device_address, 0, 1, PID_DATA0, usb_request, idx) == USB_RES_OK;
 }
 //-----------------------------------------------------------------
